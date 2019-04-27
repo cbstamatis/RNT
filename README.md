@@ -6,4 +6,4 @@ This is the home for code and data used in a manuscript in submission about repe
 
 All code for analyses described in the manuscript can be found here:
 
-rpubs.com/caitlinbrow/RNT
+https://rpubs.com/caitlinbrow/RNT
