@@ -4,7 +4,7 @@ This is the home for code and data used in a manuscript in submission about repe
 
 # Data
 
-The file rntDecisionMakingData.csv contains all data used in analyses condcuted for the manuscript
+The file rntDecisionMakingData.csv contains all data used in analyses condcuted for the manuscript.
 
 # Code for Analyses
 
