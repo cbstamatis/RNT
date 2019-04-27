@@ -1,0 +1,459 @@
+---
+title: "Repetitive negative thinking following exposure to a natural stressor prospectively predicts altered stress reactivity and decision making in the laboratory"
+output: 
+  html_document:
+    df_print: paged
+    theme: cerulean
+editor_options: 
+  chunk_output_type: inline
+---
+
+####Caitlin A. Stamatis, Nikki Puccetti, Caroline Charpentier, Aaron S. Heller, & Kiara R. Timpano####
+
+<br/>
+This document contains the code for analyses conducted for a manuscript in submission.
+<br/>
+
+```{r setup, include=FALSE, echo=F}
+knitr::opts_chunk$set(echo = TRUE)
+library(stargazer)
+library(sjPlot)
+library(sjmisc)
+library(ggplot2)
+library(lmerTest)
+library(lme4)
+library(reshape2)
+library(tidyr)
+library(doBy)
+library(psych)
+library(dplyr)
+library(nlme)
+library(readxl)
+library(summarytools)
+library(knitr)
+library(pander)
+library(DT)
+library(shiny)
+library(plyr)
+options(scipen = 999)
+df <- read.csv("rntDecisionMakingData.csv")
+df2 <- df
+df2$Gender <- as.factor(df2$Gender)
+df2$CurrentMed_notBC_t3 <- as.factor(df2$CurrentMed_notBC_t3)
+df2$CurrentMed_BC_t3 <- as.factor(df2$CurrentMed_BC_t3)
+df2$Smoker_0no_1yes_2yestoday_t3 <- as.factor(df2$Smoker_0no_1yes_2yestoday_t3)
+df2$TodayCaff_NumCups_t3 <- as.factor(df2$TodayCaff_NumCups_t3)
+df2$CurrentMenstr_t3 <- as.factor(df2$CurrentMenstr_t3)
+```
+
+###Data cleaning and set-up###
+**Packages Used:** stargazer, sjPlot, sjmisc, ggplot2, lmerTest, lme4, reshape2, tidyr, doBy, psych, dplyr, nlme, summarytools, plyr, knitr, pander, DT, shiny
+
+###View Data###
+```{r, warning=F, message=F, echo=F}
+datatable(df, extensions = c('FixedColumns','FixedHeader'), options = list(pageLength=10,lengthMenu = c(5, 10, 15, 20, 50, 100), dom = 'Blfrtip', scrollX = TRUE, scrollY=TRUE, fixedHeader=TRUE, fixedColumns = list(leftColumns = 2),
+  initComplete = JS("
+    function(settings, json) {
+      $(this.api().table().header()).css({
+        'background-color': '#000',
+        'color': '#fff'
+      });
+    }")
+))
+```
+
+###Description of Variables### 
+####Demographic Variables####
+- ID: subject ID
+- Gender_1: gender (0 = male; 1 = female)
+- Age_1: age
+- CurrentMed_notBC_t3: current medications, excluding oral contraceptive
+- CurrentMed_BC_t3: current oral contraceptive
+- Smoker_0no_1yes_2yestoday_t3: smoking status (0 = no; 1 = yes; 2 = yes and smoked today)
+- TodayCaff_NumCups_t3: number of caffeinated beverages today
+- CurrentMenstr_t3: current menstruation (1 = yes) 
+- HurricaneImpairment: continued impairment in day-to-day functioning after Hurricane Irma related to stress of hurricane experience
+</br>
+
+####Self-Reported RNT####
+- RNT_1: repetitive negative thinking on the Perseverative Thinking Questionnaire at Time 1
+</br>
+
+####Gambling Task####
+- muBL: choice consistency during baseline block
+- lambdaBL: loss aversion during baseline block
+- rhoBL: risk seeking during baseline block
+- muANT: choice consistency during stress anticipation block
+- lambdaANT: loss aversion during stress anticipation block
+- rhoANT: risk seeking during stress anticipation block
+- muREC: choice consistency during stress recovery block
+- lambdaREC: loss aversion during stress recovery block
+- rhoREC: risk seeking during stress recovery block
+
+####Cortisol and Momentary Negative Affect####
+- cort0-cort2: cortisol measures over course of session (nmol/L)
+- na0-na2: negative affect measures over course of session (PANAS)
+</br>
+
+###Descriptive Statistics & Basic Data Visualization###
+```{r, echo=F, results="asis", message=F, warning=F}
+
+dfsm <- df[c(2:4,11:24)]
+
+datatable(descr(dfsm), extensions = c('FixedColumns','FixedHeader'), options = list(pageLength=15, dom = 't', scrollX = TRUE, scrollY=TRUE, fixedHeader=TRUE, fixedColumns = list(leftColumns = 1),
+  initComplete = JS("
+    function(settings, json) {
+      $(this.api().table().header()).css({
+        'background-color': '#000',
+        'color': '#fff'
+      });
+    }")
+))
+```
+
+```{r,echo=F, results="asis", message=F, warning=F}
+df_subset <- df2[c(5:10)]
+tab <- ldply(df_subset,function(x) t(rbind(names(table(x)),table(x),paste0(prop.table(table(x))*100,"%"))))
+colnames(tab) <- c("Variable","Category","Count in Category","Percent")
+
+datatable(tab, extensions = c('FixedColumns','FixedHeader'), options = list(pageLength=15, dom = 't', scrollX = TRUE, scrollY=TRUE, fixedHeader=TRUE, fixedColumns = list(leftColumns = 3),
+  initComplete = JS("
+    function(settings, json) {
+      $(this.api().table().header()).css({
+        'background-color': '#000',
+        'color': '#fff'
+      });
+    }")
+))
+
+
+```
+
+```{r, include=F, warning=F, message=F}
+summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE, conf.interval=.95, .drop=TRUE) {
+    library(plyr)
+    length2 <- function (x, na.rm=FALSE) {
+        if (na.rm) sum(!is.na(x))
+        else length(x)
+    }
+    datac <- ddply(data, groupvars, .drop=.drop, .fun = function(xx, col) {
+        c(N=length2(xx[[col]], na.rm=na.rm),
+          mean=mean(xx[[col]], na.rm=na.rm),
+          sd=sd(xx[[col]], na.rm=na.rm))
+      }, measurevar)
+    datac <- rename(datac, c("mean" = measurevar))
+    datac$se <- datac$sd / sqrt(datac$N)
+    ciMult <- qt(conf.interval/2 + .5, datac$N-1)
+    datac$ci <- datac$se * ciMult
+    return(datac)
+}
+```
+<br/>
+
+###Cortisol Visualization###
+```{r, warning=F, message=F}
+cortvalues <- NA
+cortvalues[1] <- mean(df$cort0, na.rm=T)
+cortvalues[2] <- mean(df$cort1, na.rm=T)
+cortvalues[3] <- mean(df$cort2, na.rm=T)
+
+sevalues <- NA
+a <- summarySE(df, measurevar="cort0", na.rm=T)
+sevalues[1] <- a$se
+a2 <- summarySE(df, measurevar="cort1", na.rm=T)
+sevalues[2] <- a2$se
+a3 <- summarySE(df, measurevar="cort2", na.rm=T)
+sevalues[3] <- a3$se
+
+Cortvalues <- NA
+Cortvalues <- cbind(as.data.frame(cortvalues),as.data.frame(sevalues))
+
+Cortvalues$Time <- c(0,1,2)
+```
+<br/>
+
+```{r, warning=F, message=F, results="hide"}
+p<- ggplot(Cortvalues, aes(x=Time, y=cortvalues)) + 
+  geom_line() +
+  geom_point()+
+  geom_errorbar(aes(ymin=cortvalues-sevalues, ymax=cortvalues+sevalues), width=.2,
+                 position=position_dodge(0.05))
+```
+
+```{r, warning=F,message=F}
+# Finished line plot
+p+labs(title="Average cortisol across course of experimental stress manipulation", x="Time Point", y = "Average Cortisol (nmol/L)")+ theme_classic() + scale_x_continuous(breaks=c(0,1,2), labels=c("Baseline","Stress","Recovery")) + theme(plot.title = element_text(hjust = 0.5))
+```
+
+The plot clearly indicates an average increase in cortisol during the stress induction, and a decrease in cortisol as individuals recovered from the stressor. 
+<br/>
+
+
+###Negative Affect Visualization###
+```{r, include=F}
+navalues <- NA
+navalues[1] <- mean(df$na0, na.rm=T)
+navalues[2] <- mean(df$na1, na.rm=T)
+navalues[3] <- mean(df$na2, na.rm=T)
+
+sevalues <- NA
+a <- summarySE(df, measurevar="na0", na.rm=T)
+sevalues[1] <- a$se
+a2 <- summarySE(df, measurevar="na1", na.rm=T)
+sevalues[2] <- a2$se
+a3 <- summarySE(df, measurevar="na2", na.rm=T)
+sevalues[3] <- a3$se
+
+Navalues <- NA
+Navalues <- cbind(as.data.frame(navalues),as.data.frame(sevalues))
+
+Navalues$Time <- c(0,1,2)
+```
+
+```{r, include=F}
+p<- ggplot(Navalues, aes(x=Time, y=navalues)) + 
+  geom_line() +
+  geom_point()+
+  geom_errorbar(aes(ymin=navalues-sevalues, ymax=navalues+sevalues), width=.2,
+                 position=position_dodge(0.05))
+```
+
+```{r, warning=F,message=F,echo=F}
+p+labs(title="Average negative affect across course of experimental stress manipulation", x="Time Point", y = "Average Negative Affect (PANAS)")+ theme_classic() + scale_x_continuous(breaks=c(0,1,2), labels=c("Baseline","Stress","Recovery")) + theme(plot.title = element_text(hjust = 0.5))
+```
+
+###Gambling Task Parameter Visualization###
+####Rho####
+```{r, include=F}
+rhovalues <- NA
+rhovalues[1] <- mean(df$rho_BL_log, na.rm=T)
+rhovalues[2] <- mean(df$rho_ANT_log, na.rm=T)
+rhovalues[3] <- mean(df$rho_REC_log, na.rm=T)
+
+sevalues <- NA
+a <- summarySE(df, measurevar="rho_BL_log", na.rm=T)
+sevalues[1] <- a$se
+a2 <- summarySE(df, measurevar="rho_ANT_log", na.rm=T)
+sevalues[2] <- a2$se
+a3 <- summarySE(df, measurevar="rho_REC_log", na.rm=T)
+sevalues[3] <- a3$se
+
+Rhovalues <- NA
+Rhovalues <- cbind(as.data.frame(rhovalues),as.data.frame(sevalues))
+
+Rhovalues$Time <- c(0,1,2)
+```
+
+```{r, include=F}
+p<- ggplot(Rhovalues, aes(x=Time, y=rhovalues)) + 
+  geom_line() +
+  geom_point()+
+  geom_errorbar(aes(ymin=rhovalues-sevalues, ymax=rhovalues+sevalues), width=.2,
+                 position=position_dodge(0.05))
+```
+
+```{r, warning=F,message=F,echo=F}
+p+labs(title="Average rho across course of experimental stress manipulation", x="Time Point", y = "Average Rho")+ theme_classic() + scale_x_continuous(breaks=c(0,1,2), labels=c("Baseline","Stress","Recovery")) + theme(plot.title = element_text(hjust = 0.5))
+```
+
+####Lambda####
+```{r, include=F}
+lambdavalues <- NA
+lambdavalues[1] <- mean(df$lambda_BL_log, na.rm=T)
+lambdavalues[2] <- mean(df$lambda_ANT_log, na.rm=T)
+lambdavalues[3] <- mean(df$lambda_REC_log, na.rm=T)
+
+sevalues <- NA
+a <- summarySE(df, measurevar="lambda_BL_log", na.rm=T)
+sevalues[1] <- a$se
+a2 <- summarySE(df, measurevar="lambda_ANT_log", na.rm=T)
+sevalues[2] <- a2$se
+a3 <- summarySE(df, measurevar="lambda_REC_log", na.rm=T)
+sevalues[3] <- a3$se
+
+Lambdavalues <- NA
+Lambdavalues <- cbind(as.data.frame(lambdavalues),as.data.frame(sevalues))
+
+Lambdavalues$Time <- c(0,1,2)
+```
+
+```{r, include=F}
+p<- ggplot(Lambdavalues, aes(x=Time, y=lambdavalues)) + 
+  geom_line() +
+  geom_point()+
+  geom_errorbar(aes(ymin=lambdavalues-sevalues, ymax=lambdavalues+sevalues), width=.2,
+                 position=position_dodge(0.05))
+```
+
+```{r, warning=F,message=F,echo=F}
+p+labs(title="Average lambda across course of experimental stress manipulation", x="Time Point", y = "Average Lambda")+ theme_classic() + scale_x_continuous(breaks=c(0,1,2), labels=c("Baseline","Stress","Recovery")) + theme(plot.title = element_text(hjust = 0.5))
+```
+
+####Mu####
+```{r, include=F}
+muvalues <- NA
+muvalues[1] <- mean(df$mu_BL_log, na.rm=T)
+muvalues[2] <- mean(df$mu_ANT_log, na.rm=T)
+muvalues[3] <- mean(df$mu_REC_log, na.rm=T)
+
+sevalues <- NA
+a <- summarySE(df, measurevar="mu_BL_log", na.rm=T)
+sevalues[1] <- a$se
+a2 <- summarySE(df, measurevar="mu_ANT_log", na.rm=T)
+sevalues[2] <- a2$se
+a3 <- summarySE(df, measurevar="mu_REC_log", na.rm=T)
+sevalues[3] <- a3$se
+
+Muvalues <- NA
+Muvalues <- cbind(as.data.frame(muvalues),as.data.frame(sevalues))
+
+Muvalues$Time <- c(0,1,2)
+```
+
+```{r, include=F}
+p<- ggplot(Muvalues, aes(x=Time, y=muvalues)) + 
+  geom_line() +
+  geom_point()+
+  geom_errorbar(aes(ymin=muvalues-sevalues, ymax=muvalues+sevalues), width=.2,
+                 position=position_dodge(0.05))
+```
+
+```{r, warning=F,message=F,echo=F}
+p+labs(title="Average mu across course of experimental stress manipulation", x="Time Point", y = "Average Mu")+ theme_classic() + scale_x_continuous(breaks=c(0,1,2), labels=c("Baseline","Stress","Recovery")) + theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+###Preliminary Analyses###
+```{r}
+t.test(df$cort1, df$cort0, paired=T)
+t.test(df$cort2, df$cort0, paired=T)
+t.test(df$cort2, df$cort1, paired=T)
+
+t.test(df$na1, df$na0, paired=T)
+t.test(df$na2, df$na0, paired=T)
+t.test(df$na2, df$na1, paired=T)
+
+t.test(df$lambda_ANT_log, df$lambda_BL_log, paired=T)
+t.test(df$lambda_REC_log, df$lambda_BL_log, paired=T)
+t.test(df$lambda_REC_log, df$lambda_ANT_log, paired=T)
+
+t.test(df$rho_ANT_log, df$rho_BL_log, paired=T)
+t.test(df$rho_REC_log, df$rho_BL_log, paired=T)
+t.test(df$rho_REC_log, df$rho_ANT_log, paired=T)
+
+t.test(df$mu_ANT_log, df$mu_BL_log, paired=T)
+t.test(df$mu_REC_log, df$mu_BL_log, paired=T)
+t.test(df$mu_REC_log, df$mu_ANT_log, paired=T)
+```
+
+###Regression Models###
+####Aim 1####
+```{r, warning=F, results="asis"}
+hurte1 <- lm(scale(HurricaneImpairment) ~ scale(RNT_1), data=df)
+stargazer(hurte1, ci=TRUE, type="html")
+```
+
+####Aim 2####
+#####Baseline Models####
+```{r, warning=F, results="asis"}
+cortBLmod <- lm(scale(cort0) ~ scale(RNT_1) +scale(Smoker_0no_1yes_2yestoday_t3) + Gender+ scale(TodayCaff_NumCups_t3), data=df)
+stargazer(cortBLmod, ci=TRUE, type="html")
+           
+naBLmod <- lm(scale(na0) ~ scale(RNT_1) , data=df)
+stargazer(naBLmod, ci=TRUE, type="html")
+
+rhoBLmod <- lm(scale(rho_BL_log) ~ scale(RNT_1) , data=df)
+stargazer(rhoBLmod, ci=TRUE, type="html")
+
+lambdaBLmod <- lm(scale(lambda_BL_log) ~ scale(RNT_1) , data=df)
+stargazer(lambdaBLmod, ci=TRUE, type="html")
+
+muBLmod <- lm(scale(mu_BL_log) ~ scale(RNT_1) , data=df)
+stargazer(muBLmod, ci=TRUE, type="html")
+```
+
+####Aim 3####
+####Stress Models####
+```{r, warning=F, results="asis"}
+cortANTmod <- lm(scale(cort1) ~ scale(RNT_1) +scale(Smoker_0no_1yes_2yestoday_t3) + Gender+ scale(TodayCaff_NumCups_t3), data=df)
+stargazer(cortANTmod, ci=TRUE, type="html")
+
+cortANTmod2 <- lm(scale(cort1) ~ scale(RNT_1) +scale(Smoker_0no_1yes_2yestoday_t3) + Gender+ scale(TodayCaff_NumCups_t3) + scale(cort0), data=df)
+stargazer(cortANTmod2, ci=TRUE, type="html")
+
+naANTmod <- lm(scale(na1) ~ scale(RNT_1) , data=df)
+stargazer(naANTmod, ci=TRUE, type="html")
+confint.lm(naANTmod)
+
+naANTmod2 <- lm(scale(na1) ~ scale(RNT_1) + scale(na0), data=df)
+stargazer(naANTmod2, ci=TRUE, type="html")
+
+rhoANTmod <- lm(scale(rho_ANT_log) ~ scale(RNT_1) , data=df)
+stargazer(rhoANTmod, ci=TRUE, type="html")
+
+rhoANTmod2 <- lm(scale(rho_ANT_log) ~ scale(RNT_1) + scale(rho_BL_log), data=df)
+stargazer(rhoANTmod2, ci=TRUE, type="html")
+
+lambdaANTmod <- lm(scale(lambda_ANT_log) ~ scale(RNT_1) , data=df)
+stargazer(lambdaANTmod, ci=TRUE, type="html")
+
+lambdaANTmod2 <- lm(scale(lambda_ANT_log) ~ scale(RNT_1) + scale(lambda_BL_log), data=df)
+stargazer(lambdaANTmod2, ci=TRUE, type="html")
+
+muANTmod <- lm(scale(mu_ANT_log) ~ scale(RNT_1) , data=df)
+stargazer(muANTmod, ci=TRUE, type="html")
+
+muANTmod2 <- lm(scale(mu_ANT_log) ~ scale(RNT_1) + scale(mu_BL_log), data=df)
+stargazer(muANTmod2, ci=TRUE, type="html")
+```
+
+####Aim 4####
+####Recovery Models####
+```{r, warning=F, results="asis"}
+cortRECmod <- lm(scale(cort2) ~ scale(RNT_1) +scale(Smoker_0no_1yes_2yestoday_t3) + Gender+ scale(TodayCaff_NumCups_t3), data=df)
+stargazer(cortRECmod, ci=TRUE, type="html")
+
+cortRECmod2 <- lm(scale(cort2) ~ scale(RNT_1) +scale(Smoker_0no_1yes_2yestoday_t3) + Gender+ scale(TodayCaff_NumCups_t3) + scale(cort0), data=df)
+stargazer(cortRECmod2, ci=TRUE, type="html")
+
+cortRECmod3 <- lm(scale(cort2) ~ scale(RNT_1) +scale(Smoker_0no_1yes_2yestoday_t3) + Gender+ scale(TodayCaff_NumCups_t3) + scale(cort1), data=df)
+stargazer(cortRECmod3, ci=TRUE, type="html")
+
+naRECmod <- lm(scale(na2) ~ scale(RNT_1) , data=df)
+stargazer(naRECmod, ci=TRUE, type="html")
+confint.lm(naRECmod)
+
+naRECmod2 <- lm(scale(na2) ~ scale(RNT_1) + scale(na0), data=df)
+stargazer(naRECmod2, ci=TRUE, type="html")
+
+naRECmod3 <- lm(scale(na2) ~ scale(RNT_1) + scale(na1), data=df)
+stargazer(naRECmod3, ci=TRUE, type="html")
+
+rhoRECmod <- lm(scale(rho_REC_log) ~ scale(RNT_1) , data=df)
+stargazer(rhoRECmod, ci=TRUE, type="html")
+
+rhoRECmod2 <- lm(scale(rho_REC_log) ~ scale(RNT_1) + scale(rho_BL_log), data=df)
+stargazer(rhoRECmod2, ci=TRUE, type="html")
+
+rhoRECmod3 <- lm(scale(rho_REC_log) ~ scale(RNT_1) + scale(rho_ANT_log), data=df)
+stargazer(rhoRECmod3, ci=TRUE, type="html")
+
+lambdaRECmod <- lm(scale(lambda_REC_log) ~ scale(RNT_1) , data=df)
+stargazer(lambdaRECmod, ci=TRUE, type="html")
+
+lambdaRECmod2 <- lm(scale(lambda_REC_log) ~ scale(RNT_1) + scale(lambda_BL_log), data=df)
+stargazer(lambdaRECmod2, ci=TRUE, type="html")
+
+lambdaRECmod3 <- lm(scale(lambda_REC_log) ~ scale(RNT_1) + scale(lambda_ANT_log), data=df)
+stargazer(lambdaRECmod3, ci=TRUE, type="html")
+
+muRECmod <- lm(scale(mu_REC_log) ~ scale(RNT_1) , data=df)
+stargazer(muRECmod, ci=TRUE, type="html")
+
+muRECmod2 <- lm(scale(mu_REC_log) ~ scale(RNT_1) + scale(mu_BL_log), data=df)
+stargazer(muRECmod2, ci=TRUE, type="html")
+
+muRECmod3 <- lm(scale(mu_REC_log) ~ scale(RNT_1) + scale(mu_ANT_log), data=df)
+stargazer(muRECmod3, ci=TRUE, type="html")
+```
+
