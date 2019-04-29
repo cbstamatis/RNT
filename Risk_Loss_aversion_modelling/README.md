@@ -6,11 +6,11 @@ It then collapse the data of all three sessions together and estimates two model
 - a model where each of the 3 parameters are estimated separately for each session (baseline, anticipation, recovery), leading to 9 parameters total. This model (Model 2) calls LL_function_split_per_session.m and generate_choice_split_per_session.m
 
 In order for the gambling data to be passed into the modelling function, it needs to have the following format: matrix "P", each row is a trial and:
--column 2 is the value of the sure option, 
--column 3 is the value of the potential loss,
--column 4 is the value of the potential gain, 
--column 8 is the binary choice variable: 1 if gamble, 0 if sure option.
--column 10 here depicts the session (baseline=1, anticipation=2, recovery=3), necessary for Model 2
+- column 2 is the value of the sure option, 
+- column 3 is the value of the potential loss,
+- column 4 is the value of the potential gain, 
+- column 8 is the binary choice variable: 1 if gamble, 0 if sure option.
+- column 10 here depicts the session (baseline=1, anticipation=2, recovery=3), necessary for Model 2
 
 The script's output file is saved as "Results_models_nobounds_Sept2018.mat".
 
